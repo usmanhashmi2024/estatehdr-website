@@ -1,0 +1,178 @@
+
+# AI Discovery & Machine-Readable Protocols Cache Policy
+<FilesMatch "^(llms.*\.txt|robots\.txt|sitemap.*\.xml)$">
+    <IfModule mod_headers.c>
+        Header always set Cache-Control "no-cache, no-store, must-revalidate"
+        Header always set Pragma "no-cache"
+        Header always set Expires "0"
+        Header always set Access-Control-Allow-Origin "*"
+    </IfModule>
+</FilesMatch>
+
+# ==============================================================================
+# Estate HDR — Master Routing & Security Engine
+# Hostinger LiteSpeed Compatible — Tested Safe Version
+# ==============================================================================
+
+# Disable Directory Browsing
+Options -Indexes
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /
+
+    # 1. Block common injection attacks in query strings
+    RewriteCond %{QUERY_STRING} (eval\(|base64_decode|union.*select|<script|javascript:|etc/passwd|%00) [NC,OR]
+    RewriteCond %{QUERY_STRING} (\.\./) [NC]
+    RewriteRule .* - [F,L]
+
+    # 2. Block known malicious bots & scanners
+    RewriteCond %{HTTP_USER_AGENT} (nikto|sqlmap|dirbuster|acunetix|havij|masscan) [NC]
+    RewriteRule .* - [F,L]
+
+    # 3. Block WordPress exploitation probes (not a WP site)
+    RewriteRule ^xmlrpc\.php$ - [G,L]
+    RewriteRule ^wp-(admin|login|includes|content|json|signup) - [G,L]
+
+    # 4. Canonical: www -> non-www
+    RewriteCond %{HTTP_HOST} ^www\.(.+)$ [NC]
+    RewriteRule ^(.*)$ https://%1/$1 [R=301,L]
+
+    # 5. Force HTTPS (Hostinger + Cloudflare compatible)
+    RewriteCond %{HTTPS} off
+    RewriteCond %{HTTP:X-Forwarded-Proto} !https
+    RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+    # 6. /index.php -> /
+    RewriteCond %{THE_REQUEST} ^[A-Z]{3,9}\ /index\.php [NC]
+    RewriteRule ^index\.php$ / [R=301,L]
+
+    # Recover historical Search Console URLs with equivalent existing pages.
+    # Keep the canonical destination URLs; do not send retired services to home.
+    RewriteRule ^contact-us/?$ /contact [R=301,L]
+    RewriteRule ^day-to-dusk-service/?$ /services/day-to-dusk [R=301,L]
+    RewriteRule ^flambient-exposure/?$ /services/flambient-photo-editing [R=301,L]
+    RewriteRule ^hdr-(bracketing|interiors|exteriors)/?$ /services/hdr-photo-editing [R=301,L]
+    RewriteRule ^object-removal/?$ /services/item-removal [R=301,L]
+    RewriteRule ^virtual-staging-2/?$ /services/virtual-staging [R=301,L]
+
+    # 7. Remove .php extensions (SEO clean URLs)
+    # Resolve legacy content URLs before the generic extension redirect.
+    RewriteCond %{THE_REQUEST} \s/+blog-post\.php\?slug=([a-zA-Z0-9_-]+)(?:[&\s]) [NC]
+    RewriteRule ^blog-post\.php$ /blog/%1? [R=301,L]
+
+    RewriteCond %{THE_REQUEST} \s/+service\.php\?slug=([a-zA-Z0-9_-]+)(?:[&\s]) [NC]
+    RewriteRule ^service\.php$ /services/%1? [R=301,L]
+
+    RewriteCond %{THE_REQUEST} ^[A-Z]{3,9}\ /([a-zA-Z0-9_-]+)\.php [NC]
+    RewriteCond %{REQUEST_URI} !^/robots\.php
+    RewriteCond %{REQUEST_URI} !^/rss\.php
+    RewriteCond %{REQUEST_URI} !^/admin/
+    RewriteCond %{REQUEST_URI} !^/api/
+    RewriteCond %{REQUEST_URI} !^/client/
+    RewriteRule ^([a-zA-Z0-9_-]+)\.php$ /$1 [R=301,L]
+
+    # 8. Dynamic files
+    RewriteRule ^robots\.txt$ robots.php [L,QSA]
+    RewriteRule ^rss\.xml$ rss.php [L,QSA]
+    RewriteRule ^llms\.txt$ llms.txt [L]
+    RewriteRule ^feed/?$ rss.php [L,QSA]
+    RewriteRule ^rss/?$ rss.php [L,QSA]
+
+    # 9. Sitemaps
+    RewriteRule ^sitemap\.xml$ sitemap_index.php [L,QSA]
+    RewriteRule ^sitemap_index\.xml$ sitemap_index.php [L,QSA]
+    RewriteRule ^sitemap-services\.xml$ sitemap-services.php [L,QSA]
+    RewriteRule ^sitemap-pages\.xml$ sitemap-pages.php [L,QSA]
+    RewriteRule ^sitemap-posts\.xml$ sitemap-posts.php [L,QSA]
+    RewriteRule ^sitemap-images\.xml$ sitemap-images.php [L,QSA]
+
+    # 10. Blog routing
+    RewriteRule ^blog/category/uncategorized/?$ /blog [R=301,L]
+    RewriteRule ^blog/category/([a-zA-Z0-9_-]+)/?$ blog.php?cat=$1 [L,QSA]
+    RewriteRule ^blog/([a-zA-Z0-9_-]+)/?$ blog-post.php?slug=$1 [L,QSA]
+    RewriteRule ^blog/?$ blog.php [L,QSA]
+
+    # 11. Services routing
+    RewriteRule ^services/?$ /#services [R=301,L]
+    RewriteRule ^services/([a-zA-Z0-9_-]+)/?$ service.php?slug=$1 [L,QSA]
+    RewriteRule ^service/([a-zA-Z0-9_-]+)/?$ service.php?slug=$1 [L,QSA]
+
+    # 12. Explicit Core Page Routing (100% LiteSpeed / Hostinger Bulletproof)
+    RewriteRule ^about/?$ about.php [L,QSA]
+    RewriteRule ^portfolio/?$ portfolio.php [L,QSA]
+    RewriteRule ^pricing/?$ pricing.php [L,QSA]
+    RewriteRule ^contact/?$ contact.php [L,QSA]
+    RewriteRule ^login/?$ login.php [L,QSA]
+    RewriteRule ^logout/?$ logout.php [L,QSA]
+    RewriteRule ^dashboard/?$ dashboard.php [L,QSA]
+    RewriteRule ^register/?$ register.php [L,QSA]
+    RewriteRule ^profile/?$ profile.php [L,QSA]
+    RewriteRule ^billing/?$ billing.php [L,QSA]
+    RewriteRule ^order/?$ order-new.php [L,QSA]
+    RewriteRule ^order-new/?$ order-new.php [L,QSA]
+    RewriteRule ^orders/?$ dashboard.php [L,QSA]
+    RewriteRule ^support/?$ support.php [L,QSA]
+    RewriteRule ^team/?$ team.php [L,QSA]
+    RewriteRule ^review/?$ review.php [L,QSA]
+    RewriteRule ^terms/?$ terms.php [L,QSA]
+    RewriteRule ^privacy/?$ privacy.php [L,QSA]
+    RewriteRule ^knowledge-base/?$ knowledge-base.php [L,QSA]
+    RewriteRule ^editorial-guidelines/?$ editorial-guidelines.php [L,QSA]
+    RewriteRule ^alternatives/?$ alternatives.php [L,QSA]
+    RewriteRule ^preferences/?$ preferences.php [L,QSA]
+    RewriteRule ^completed-jobs/?$ completed-jobs.php [L,QSA]
+    RewriteRule ^pending-jobs/?$ pending-jobs.php [L,QSA]
+    RewriteRule ^real-estate-photo-editing/?$ real-estate-photo-editing.php [L,QSA]
+
+    # 13. Clean aliases
+    RewriteRule ^faq/?$ /#faq [R=301,L]
+    RewriteRule ^about-us/?$ /about [R=301,L]
+
+    # 15. Universal Extensionless PHP fallback (LiteSpeed + Apache)
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{DOCUMENT_ROOT}/$1.php -f [OR]
+    RewriteCond %{REQUEST_FILENAME}.php -f
+    RewriteRule ^([a-zA-Z0-9_-]+)/?$ $1.php [L,QSA]
+</IfModule>
+
+# Custom 404
+ErrorDocument 404 /404.php
+
+# GZIP Compression
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/plain text/html text/xml text/css text/javascript application/javascript application/json image/svg+xml
+</IfModule>
+
+# Browser Caching
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresDefault "access plus 1 month"
+    ExpiresByType image/jpeg "access plus 1 year"
+    ExpiresByType image/png "access plus 1 year"
+    ExpiresByType image/webp "access plus 1 year"
+    ExpiresByType image/svg+xml "access plus 1 year"
+    ExpiresByType font/woff2 "access plus 1 year"
+    ExpiresByType font/woff "access plus 1 year"
+    ExpiresByType text/css "access plus 1 month"
+    ExpiresByType application/javascript "access plus 1 month"
+</IfModule>
+
+# Security Headers
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set X-XSS-Protection "1; mode=block"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+
+    <FilesMatch "\.(jpg|jpeg|png|gif|webp|svg|js|css|woff|woff2|ttf)$">
+        Header always set Cache-Control "max-age=31536000, public, immutable"
+    </FilesMatch>
+</IfModule>
+
+# Block direct access to sensitive directories
+<IfModule mod_authz_core.c>
+    <DirectoryMatch "^.*/(\.git|node_modules)/">
+        Require all denied
+    </DirectoryMatch>
+</IfModule>

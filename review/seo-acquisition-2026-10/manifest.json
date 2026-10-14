@@ -1,0 +1,16 @@
+{
+  "base_commit": "5804f777cdeb8901a5a77a46c54a8e71f2c67042",
+  "files": {
+    "pricing.php": "a226e1d3f2d565961b0db839d839df80522361cd8a0485051ae6005b1c41ece6",
+    "blog-post.php": "bd34321c87e93fbf666ae00200bf899b666400331dfd1d65002600c796f3a666",
+    "register.php": "a20202dbe474e3dbd55a75e386606cd5b4caf9f7c1bf8f28343a95a896e376cc",
+    "login.php": "2f4682ed94b354cb3796eb364e57e8a078e75019bce7c96d456fc1ddce2444d2",
+    ".htaccess": "9e675c31b3a841d8fa378fe6b7bc9a4c454c5bfd58fb013cada3e1aaa19bc1ca",
+    "tests/seo-acquisition-regression.php": "f1601f9311a76d405a62dda9ddb90b76839a310a1ec3d8b8fbbb01c763dc7b92",
+    "includes/client-return.php": "a52ed2da516580de4deea4c10cf920362a18bc79a29b987dcb2667406c6bfffa",
+    "includes/jsonld.php": "164026c3d3dfdef9c155aaabeb79c6070860bd5f5f4fc3828b231dc155f45e51",
+    "includes/auth.php": "7eee43d60aa9b5ce64dc823402a07965ce421d7218fa4b0122ad080a0edcc640"
+  },
+  "runtime": "PHP 8.2.33 via WebAssembly",
+  "production_deployed": false
+}

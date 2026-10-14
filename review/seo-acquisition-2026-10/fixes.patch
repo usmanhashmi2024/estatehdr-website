@@ -1,0 +1,303 @@
+--- a/.htaccess
++++ b/.htaccess
+@@ -47,7 +47,23 @@
+     RewriteCond %{THE_REQUEST} ^[A-Z]{3,9}\ /index\.php [NC]
+     RewriteRule ^index\.php$ / [R=301,L]
+ 
++    # Recover historical Search Console URLs with equivalent existing pages.
++    # Keep the canonical destination URLs; do not send retired services to home.
++    RewriteRule ^contact-us/?$ /contact [R=301,L]
++    RewriteRule ^day-to-dusk-service/?$ /services/day-to-dusk [R=301,L]
++    RewriteRule ^flambient-exposure/?$ /services/flambient-photo-editing [R=301,L]
++    RewriteRule ^hdr-(bracketing|interiors|exteriors)/?$ /services/hdr-photo-editing [R=301,L]
++    RewriteRule ^object-removal/?$ /services/item-removal [R=301,L]
++    RewriteRule ^virtual-staging-2/?$ /services/virtual-staging [R=301,L]
++
+     # 7. Remove .php extensions (SEO clean URLs)
++    # Resolve legacy content URLs before the generic extension redirect.
++    RewriteCond %{THE_REQUEST} \s/+blog-post\.php\?slug=([a-zA-Z0-9_-]+)(?:[&\s]) [NC]
++    RewriteRule ^blog-post\.php$ /blog/%1? [R=301,L]
++
++    RewriteCond %{THE_REQUEST} \s/+service\.php\?slug=([a-zA-Z0-9_-]+)(?:[&\s]) [NC]
++    RewriteRule ^service\.php$ /services/%1? [R=301,L]
++
+     RewriteCond %{THE_REQUEST} ^[A-Z]{3,9}\ /([a-zA-Z0-9_-]+)\.php [NC]
+     RewriteCond %{REQUEST_URI} !^/robots\.php
+     RewriteCond %{REQUEST_URI} !^/rss\.php
+@@ -58,6 +74,7 @@
+ 
+     # 8. Dynamic files
+     RewriteRule ^robots\.txt$ robots.php [L,QSA]
++    RewriteRule ^rss\.xml$ rss.php [L,QSA]
+     RewriteRule ^llms\.txt$ llms.txt [L]
+     RewriteRule ^feed/?$ rss.php [L,QSA]
+     RewriteRule ^rss/?$ rss.php [L,QSA]
+@@ -112,13 +129,6 @@
+     RewriteRule ^faq/?$ /#faq [R=301,L]
+     RewriteRule ^about-us/?$ /about [R=301,L]
+ 
+-    # 14. Legacy redirects
+-    RewriteCond %{THE_REQUEST} \s/+blog-post\.php\?slug=([^\s&]+) [NC]
+-    RewriteRule ^blog-post\.php$ /blog/%1? [R=301,L]
+-
+-    RewriteCond %{THE_REQUEST} \s/+service\.php\?slug=([^\s&]+) [NC]
+-    RewriteRule ^service\.php$ /services/%1? [R=301,L]
+-
+     # 15. Universal Extensionless PHP fallback (LiteSpeed + Apache)
+     RewriteCond %{REQUEST_FILENAME} !-d
+     RewriteCond %{DOCUMENT_ROOT}/$1.php -f [OR]
+--- /dev/null
++++ b/includes/client-return.php
+@@ -0,0 +1,26 @@
++<?php
++/** Keep client acquisition intent on a local, allowlisted portal route. */
++function clientReturnPath($candidate): string {
++    $fallback = '/dashboard';
++    if (!is_string($candidate) || $candidate === '' || strlen($candidate) > 4096) {
++        return $fallback;
++    }
++    if ($candidate[0] !== '/' || str_starts_with($candidate, '//') ||
++        str_contains($candidate, '\\') || preg_match('/[\x00-\x1F\x7F]/', $candidate) ||
++        preg_match('/%(?:0a|0d|00|5c)/i', $candidate)) {
++        return $fallback;
++    }
++    $parts = parse_url($candidate);
++    if ($parts === false || isset($parts['host']) || isset($parts['scheme']) || isset($parts['fragment'])) {
++        return $fallback;
++    }
++    $path = $parts['path'] ?? '';
++    $routes = ['dashboard', 'order', 'order-new', 'order-view', 'orders', 'billing',
++        'profile', 'preferences', 'support', 'completed-jobs', 'pending-jobs', 'review'];
++    foreach ($routes as $route) {
++        if (in_array($path, ['/' . $route, '/' . $route . '.php', '/' . $route . '/'], true)) {
++            return $candidate;
++        }
++    }
++    return $fallback;
++}
+--- /dev/null
++++ b/includes/jsonld.php
+@@ -0,0 +1,21 @@
++<?php
++/** Accept JSON or one pasted JSON-LD script wrapper; emit script-safe JSON only. */
++function normalizeCustomJsonLd($raw): ?string {
++    if (!is_string($raw) || trim($raw) === '') {
++        return null;
++    }
++    $raw = trim($raw);
++    if (preg_match('~^<script\b[^>]*>\s*(.*?)\s*</script>\s*$~is', $raw, $matches)) {
++        $raw = $matches[1];
++    }
++    try {
++        $schema = json_decode($raw, false, 512, JSON_THROW_ON_ERROR);
++    } catch (JsonException $e) {
++        return null;
++    }
++    if (!is_object($schema) && !is_array($schema)) {
++        return null;
++    }
++    return json_encode($schema, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS |
++        JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
++}
+--- a/includes/auth.php
++++ b/includes/auth.php
+@@ -4,6 +4,7 @@
+  * Supports Owner/Super Admin, Manager, Supervisor, SEO Manager, and Client Roles
+  */
+ require_once __DIR__ . '/config.php';
++require_once __DIR__ . '/client-return.php';
+ 
+ // ── CSRF Protection ──────────────────────────────────────────
+ function csrfToken(): string {
+@@ -394,12 +395,8 @@
+ 
+ function requireLogin(): void {
+     if (!isLoggedIn()) {
+-        $cleanUri = filter_var($_SERVER['REQUEST_URI'] ?? '/dashboard.php', FILTER_SANITIZE_URL);
+-        // Prevent open redirect
+-        if (!str_starts_with($cleanUri, '/') || str_starts_with($cleanUri, '//')) {
+-            $cleanUri = '/dashboard.php';
+-        }
+-        header('Location: /login.php?redirect=' . urlencode($cleanUri));
++        $cleanUri = clientReturnPath($_SERVER['REQUEST_URI'] ?? '');
++        header('Location: /login?redirect=' . urlencode($cleanUri));
+         exit;
+     }
+ }
+--- a/login.php
++++ b/login.php
+@@ -9,7 +9,7 @@
+ }
+ 
+ $error = '';
+-$redirect = $_GET['redirect'] ?? '/dashboard.php';
++$redirect = clientReturnPath($_POST['redirect'] ?? $_GET['redirect'] ?? '');
+ 
+ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+     verifyCsrf();
+@@ -34,7 +34,7 @@
+                 } else {
+                     clearFailedLoginAttempts($clientIp);
+                     loginUser($user);
+-                    header('Location: ' . (str_starts_with($redirect, '/') ? $redirect : '/dashboard.php'));
++                    header('Location: ' . $redirect);
+                     exit;
+                 }
+             } else {
+@@ -91,19 +91,19 @@
+     <?= ehdr_render_honeypot() ?>
+     <input type="hidden" name="redirect" value="<?= htmlspecialchars($redirect) ?>">
+     <div>
+-      <label class="form-label text-xs">Email Address</label>
+-      <input type="email" name="email" class="form-input text-sm" placeholder="name@company.com"
++      <label for="login-email" class="form-label text-xs">Email Address</label>
++      <input id="login-email" type="email" name="email" class="form-input text-sm" placeholder="name@company.com"
+              value="<?= htmlspecialchars($_POST['email'] ?? '') ?>" required autocomplete="email">
+     </div>
+     <div>
+-      <label class="form-label text-xs">Password</label>
+-      <input type="password" name="password" class="form-input text-sm" placeholder="Your password" required autocomplete="current-password">
++      <label for="login-password" class="form-label text-xs">Password</label>
++      <input id="login-password" type="password" name="password" class="form-input text-sm" placeholder="Your password" required autocomplete="current-password">
+     </div>
+     <button type="submit" class="btn-gold w-full py-3 font-bold text-xs shadow-glow mt-2">Sign In to Portal</button>
+   </form>
+ 
+   <p class="text-center text-gray-400 text-xs mt-8">
+-    No account yet? <a href="/register.php" class="text-gold hover:underline font-bold">Create one free &rarr;</a>
++    No account yet? <a href="/register?redirect=<?= htmlspecialchars(urlencode($redirect), ENT_QUOTES, 'UTF-8') ?>" class="text-gold hover:underline font-bold">Create one free &rarr;</a>
+   </p>
+ </div>
+ <?php require_once __DIR__ . '/includes/chat-widgets.php'; ?>
+--- a/register.php
++++ b/register.php
+@@ -2,9 +2,10 @@
+ require_once __DIR__ . '/includes/config.php';
+ require_once __DIR__ . '/includes/auth.php';
+ require_once __DIR__ . '/includes/db.php';
++$redirect = clientReturnPath($_POST['redirect'] ?? $_GET['redirect'] ?? '');
+ 
+ if (isLoggedIn()) {
+-    header('Location: /dashboard.php');
++    header('Location: ' . $redirect);
+     exit;
+ }
+ 
+@@ -36,7 +37,7 @@
+             $user = createUser($name, $email, $password, $company, '', '', '', 'client');
+             loginUser($user);
+             setFlash('success', 'Account created! Welcome to Estate HDR Client Portal.');
+-            header('Location: /dashboard.php');
++            header('Location: ' . $redirect);
+             exit;
+         }
+     }
+@@ -81,24 +82,25 @@
+ 
+   <form method="POST" class="space-y-4">
+     <?= csrfField() ?>
++    <input type="hidden" name="redirect" value="<?= htmlspecialchars($redirect, ENT_QUOTES, 'UTF-8') ?>">
+     <div>
+-      <label class="form-label text-xs">Full Name *</label>
+-      <input type="text" name="name" class="form-input text-sm" placeholder="Craig Westerman"
++      <label for="register-name" class="form-label text-xs">Full Name *</label>
++      <input id="register-name" type="text" name="name" class="form-input text-sm" placeholder="Craig Westerman"
+              value="<?= htmlspecialchars($_POST['name'] ?? '') ?>" required autocomplete="name">
+     </div>
+     <div>
+-      <label class="form-label text-xs">Email Address *</label>
+-      <input type="email" name="email" class="form-input text-sm" placeholder="craig@agency.com"
++      <label for="register-email" class="form-label text-xs">Email Address *</label>
++      <input id="register-email" type="email" name="email" class="form-input text-sm" placeholder="craig@agency.com"
+              value="<?= htmlspecialchars($_POST['email'] ?? '') ?>" required autocomplete="email">
+     </div>
+     <div>
+-      <label class="form-label text-xs">Company / Agency (optional)</label>
+-      <input type="text" name="company" class="form-input text-sm" placeholder="Prime Realty Media"
++      <label for="register-company" class="form-label text-xs">Company / Agency (optional)</label>
++      <input id="register-company" type="text" name="company" class="form-input text-sm" placeholder="Prime Realty Media"
+              value="<?= htmlspecialchars($_POST['company'] ?? '') ?>" autocomplete="organization">
+     </div>
+     <div>
+-      <label class="form-label text-xs">Password * (min 8 characters)</label>
+-      <input type="password" name="password" class="form-input text-sm" placeholder="••••••••" required autocomplete="new-password" minlength="8">
++      <label for="register-password" class="form-label text-xs">Password * (min 8 characters)</label>
++      <input id="register-password" type="password" name="password" class="form-input text-sm" placeholder="••••••••" required autocomplete="new-password" minlength="8">
+     </div>
+     <?= ehdr_render_honeypot() ?>
+     <?= ehdr_render_turnstile('register') ?>
+@@ -107,7 +109,7 @@
+   </form>
+ 
+   <p class="text-center text-gray-400 text-xs mt-8">
+-    Already have an account? <a href="/login.php" class="text-gold hover:underline font-bold">Sign In &rarr;</a>
++    Already have an account? <a href="/login?redirect=<?= htmlspecialchars(urlencode($redirect), ENT_QUOTES, 'UTF-8') ?>" class="text-gold hover:underline font-bold">Sign In &rarr;</a>
+   </p>
+ </div>
+ <?php require_once __DIR__ . '/includes/chat-widgets.php'; ?>
+--- a/blog-post.php
++++ b/blog-post.php
+@@ -2,6 +2,7 @@
+ require_once __DIR__ . '/includes/config.php';
+ require_once __DIR__ . '/includes/auth.php';
+ require_once __DIR__ . '/includes/db.php';
++require_once __DIR__ . '/includes/jsonld.php';
+ if (file_exists(__DIR__ . '/includes/seo-helper.php')) {
+     require_once __DIR__ . '/includes/seo-helper.php';
+ }
+@@ -183,9 +184,10 @@
+ <?= renderSeoHeadTags() ?>
+ 
+ <!-- Dynamic JSON-LD Schema Markup -->
+-<?php if (!empty($post['schema_json'])): ?>
++<?php $customSchema = normalizeCustomJsonLd($post['schema_json'] ?? ''); ?>
++<?php if ($customSchema !== null): ?>
+ <script type="application/ld+json" nonce="<?= \EstateHDR\Security\SecurityHeaders::nonce() ?>">
+-<?= $post['schema_json'] ?>
++<?= $customSchema ?>
+ </script>
+ <?php else: ?>
+ <script type="application/ld+json" nonce="<?= \EstateHDR\Security\SecurityHeaders::nonce() ?>">
+--- a/pricing.php
++++ b/pricing.php
+@@ -113,7 +113,7 @@
+         <div class="p-6 rounded-2xl bg-dark-card border border-dark-border space-y-2">
+           <div class="font-bold text-white text-base">How does volume discount pricing work?</div>
+           <p class="text-sm text-gray-300 leading-relaxed">
+-            Our automated pricing system applies instant volume discounts directly in your cart or monthly ledger: 5% off for 20+ photos, 10% off for 50+ photos, and 15% VIP discount for 100+ photos.
++            The calculator above shows the current service and quantity tiers. Review your selected service, quantity, turnaround and add-ons before requesting an estimate. Your final order scope and billing should match the confirmed quote.
+           </p>
+         </div>
+ 
+--- /dev/null
++++ b/tests/seo-acquisition-regression.php
+@@ -0,0 +1,29 @@
++<?php
++require_once __DIR__ . '/../includes/client-return.php';
++require_once __DIR__ . '/../includes/jsonld.php';
++$checks = 0;
++function check($actual, $expected, string $label): void {
++    global $checks;
++    $checks++;
++    if ($actual !== $expected) {
++        throw new RuntimeException($label . ': expected ' . var_export($expected, true) . ', got ' . var_export($actual, true));
++    }
++}
++$quote = '/order-new?service=HDR%20Photo%20Retouching&count=25&est=44.63&curr=USD';
++check(clientReturnPath($quote), $quote, 'quote return path retained');
++check(clientReturnPath('/order-view.php?id=example'), '/order-view.php?id=example', 'existing portal link accepted');
++foreach (['https://example.com', '//example.com', '/\\example.com', "/order-new\r\nLocation: https://example.com", '/order-new%0d%0aInjected', '/order-new/../admin', '/%2forder-new', '/admin/users', '/logout', '/login?redirect=//example.com', '/dashboard#fragment', ['redirect' => '/order-new'], null] as $bad) {
++    check(clientReturnPath($bad), '/dashboard', 'untrusted redirect rejected');
++}
++$schema = '{"@context":"https://schema.org","@type":"Article","headline":"A < B & C"}';
++$normalized = normalizeCustomJsonLd($schema);
++check(json_decode($normalized, true)['headline'], 'A < B & C', 'valid JSON round trips');
++check(str_contains($normalized, '<'), false, 'HTML characters escaped');
++$wrapped = '<script type="application/ld+json">' . $schema . '</script>';
++check(normalizeCustomJsonLd($wrapped), $normalized, 'pasted script wrapper normalized');
++$breakout = json_encode(['@context' => 'https://schema.org', 'text' => '</script><script>alert(1)</script>']);
++check(str_contains(normalizeCustomJsonLd($breakout), '</script>'), false, 'script breakout escaped');
++foreach (['', '<script>{invalid}</script>', '{broken', 'null', '123', '"string"', '<script>{}</script><script>alert(1)</script>'] as $bad) {
++    check(normalizeCustomJsonLd($bad), null, 'invalid custom schema triggers fallback');
++}
++echo "PASS: {$checks} redirect and JSON-LD checks\n";
